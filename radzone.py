@@ -27,26 +27,38 @@ import numpy as np
 from scipy import stats
 
 
-def parse_shieldrate(msid_directory, shieldrate_msid_filename):
+def parse_shieldrate(msid_directory, shieldrate_msid_filenames):
+
+    bothfiles_found = os.path.isfile(msid_directory + shieldrate_msid_filenames["5min"]) and os.path.isfile(
+        msid_directory + shieldrate_msid_filenames["Full"])
 
     # Make sure the .csv file exists before trying this:
-    if os.path.isfile(msid_directory + shieldrate_msid_filename):
-        msid = ascii.read(msid_directory +
-                          shieldrate_msid_filename,
+    if bothfiles_found:
+        fivemin = ascii.read(msid_directory +
+                             shieldrate_msid_filenames["5min"],
+                             format="fast_csv")
+
+        full = ascii.read(msid_directory +
+                          shieldrate_msid_filenames["Full"],
                           format="fast_csv")
 
         print("Shieldrate MSID parsed")
     else:
-        print("MSID CSV file not present")
+        print("I can't find both of the MSIDs needed")
         sys.exit(1)
 
-    rate = msid['midvals']
-    time = convert_chandra_time(msid['times'])
+    rate = fivemin['midvals']
+    fullrate = full['vals']
+    time = convert_chandra_time(fivemin['times'])
+    fulltimes = convert_chandra_time(full['times'])
 
     shieldrate = {"Time": time,
-                  "Rate": rate}
+                  "Rate": rate,
+                  "Full Time": fulltimes,
+                  "Full Rate": fullrate}
 
     return shieldrate
+
 
 def parse_orbits(spacecraft_event_directory, spacecraft_event_filename):
 
@@ -74,6 +86,7 @@ def parse_orbits(spacecraft_event_directory, spacecraft_event_filename):
              "Radzone Exit": radzone_exit}
 
     return orbit
+
 
 def convert_chandra_time(rawtimes):
     """
@@ -106,6 +119,7 @@ def convert_chandra_time(rawtimes):
 
     return chandratime
 
+
 def convert_orbit_time(rawtimes):
     """
     The orbit table gives times in the format: 2000:003:15:27:47.271, i.e.
@@ -118,7 +132,8 @@ def convert_orbit_time(rawtimes):
     orbittime = []
 
     for i in range(len(rawtimes)):
-        orbittime.append(dt.datetime.strptime(rawtimes[i], "%Y:%j:%H:%M:%S.%f"))
+        orbittime.append(dt.datetime.strptime(
+            rawtimes[i], "%Y:%j:%H:%M:%S.%f"))
 
     return orbittime
 
@@ -141,10 +156,6 @@ def makeplot(shieldrate, orbit):
 
     fig, ax = plt.subplots(figsize=(12, 8))
 
-    # plt.axhline(y=65000, color='gray', alpha=0.8,
-    #             label="SCS 107 Threshold (65,000 cps)")
-
-
     # Fill in a gray bar for every radzone passage
     # and mark the entries and exits with a separate color bar
 
@@ -153,16 +164,24 @@ def makeplot(shieldrate, orbit):
     exit_color = list(plt.rcParams['axes.prop_cycle'])[4]['color']
 
     for i, (entry, exit) in enumerate(zip(orbit["Radzone Entry"], orbit["Radzone Exit"])):
-        plt.axvline(entry, label="Radzone Entry" if i==0 else "", color=entry_color)
-        plt.axvline(exit, label="Radzone Exit" if i==0 else "", color=exit_color)
-        plt.axvspan(entry, exit, alpha=0.5, color='gray', label="Radzone Passage" if i==0 else "")
+        plt.axvline(entry, label="Radzone Entry" if i ==
+                    0 else "", color=entry_color)
+        plt.axvline(exit, label="Radzone Exit" if i ==
+                    0 else "", color=exit_color)
+        plt.axvspan(entry, exit, alpha=0.5, color='gray',
+                    label="Radzone Passage" if i == 0 else "")
     # the label= business is to ensure I don't write thousands of entries in the legend
 
     # Also mark the entries and exits, to make it clear
 
+    plt.axhline(y=65000, color='gray', alpha=0.8,
+                label="SCS 107 Threshold (65,000 cps)")
 
     ax.plot_date(shieldrate["Time"], shieldrate["Rate"], markersize=0.8,
-                 label='HRC Shield Rate (2SHEV1RT)')
+                 label='HRC Shield Rate (2SHEV1RT), 5 minute')
+
+    ax.plot_date(shieldrate["Full Time"], shieldrate["Full Rate"], markersize=0.8,
+                 label='HRC Shield Rate (2SHEV1RT), Full resolution')
 
     ax.set_yscale('log')
     ax.set_ylim(1000, 200000)
@@ -179,16 +198,21 @@ def makeplot(shieldrate, orbit):
 def main():
 
     msid_directory = "msids/"
-    shieldrate_msid_filename = "2SHEV1RT.csv"
+    #shieldrate_msid_filename = "2SHEV1RT_full.csv"
+    shieldrate_msid_filenames = {"5min": "2SHEV1RT_5min.csv",
+                                 "Full": "2SHEV1RT_full.csv"}
 
     spacecraft_event_directory = "spacecraft_events/"
     spacecraft_event_filename = "orbit_table.csv"
 
     # This is a dictionary:
-    shieldrate = parse_shieldrate(msid_directory, shieldrate_msid_filename)
+    shieldrate = parse_shieldrate(msid_directory, shieldrate_msid_filenames)
     orbit = parse_orbits(spacecraft_event_directory, spacecraft_event_filename)
 
+    print("There have been {} radzone passages since the start of the Kadi database".format(
+        len(orbit["Radzone Entry"])))
     makeplot(shieldrate, orbit)
+
 
 if __name__ == '__main__':
     start_time = time.time()
