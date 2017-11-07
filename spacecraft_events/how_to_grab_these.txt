@@ -1,0 +1,8 @@
+You need to grab this from the Kadi archive on the HEAD network. 
+
+from kadi import events
+orbits = events.orbits
+table = orbits.table
+table.write("orbit_table.csv", format="csv")
+
+

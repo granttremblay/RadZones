@@ -27,15 +27,15 @@ import numpy as np
 from scipy import stats
 
 
-def parse_shieldrate(msid_directory, shieldrate_msid):
+def parse_shieldrate(msid_directory, shieldrate_msid_filename):
 
     # Make sure the .csv file exists before trying this:
-    if os.path.isfile(msid_directory + shieldrate_msid + ".csv"):
+    if os.path.isfile(msid_directory + shieldrate_msid_filename):
         msid = ascii.read(msid_directory +
-                          shieldrate_msid + ".csv",
+                          shieldrate_msid_filename,
                           format="fast_csv")
 
-        print("Shieldrate MSID Parsed")
+        print("Shieldrate MSID parsed")
     else:
         print("MSID CSV file not present")
         sys.exit(1)
@@ -48,6 +48,32 @@ def parse_shieldrate(msid_directory, shieldrate_msid):
 
     return shieldrate
 
+def parse_orbits(spacecraft_event_directory, spacecraft_event_filename):
+
+    # Make sure the .csv file exists before trying this:
+    if os.path.isfile(spacecraft_event_directory + spacecraft_event_filename):
+        msid = ascii.read(spacecraft_event_directory +
+                          spacecraft_event_filename)
+
+        print("Spacecraft orbits parsed")
+    else:
+        print("MSID CSV file not present")
+        sys.exit(1)
+
+    # Available fields in Orbit table:
+    # start,stop,tstart,tstop,dur,orbit_num,perigee,apogee,t_perigee,
+    # start_radzone,stop_radzone,dt_start_radzone,dt_stop_radzone
+
+    # Times are given like: 2000:003:15:27:47.271, so you need to convert
+    # them into an mpl date.
+
+    radzone_entry = convert_orbit_time(msid['start_radzone'])
+    radzone_exit = convert_orbit_time(msid['stop_radzone'])
+
+    orbit = {"Radzone Entry": radzone_entry,
+             "Radzone Exit": radzone_exit}
+
+    return orbit
 
 def convert_chandra_time(rawtimes):
     """
@@ -80,6 +106,22 @@ def convert_chandra_time(rawtimes):
 
     return chandratime
 
+def convert_orbit_time(rawtimes):
+    """
+    The orbit table gives times in the format: 2000:003:15:27:47.271, i.e.
+    YYYY:DOY:HH:MM:SS.sss, so you need to convert these into a matplotlib date.
+    """
+
+    # Using %S.%f at the end converts to microseconds. I tested this
+    # and it's correct.
+
+    orbittime = []
+
+    for i in range(len(rawtimes)):
+        orbittime.append(dt.datetime.strptime(rawtimes[i], "%Y:%j:%H:%M:%S.%f"))
+
+    return orbittime
+
 
 def styleplots():
     plt.style.use('ggplot')
@@ -93,14 +135,31 @@ def styleplots():
     plt.rcParams['ytick.labelsize'] = labelsizes
 
 
-def makeplot(shieldrate):
+def makeplot(shieldrate, orbit):
 
     styleplots()
 
     fig, ax = plt.subplots(figsize=(12, 8))
 
-    plt.axhline(y=65000, color='gray', alpha=0.8,
-                label="SCS 107 Threshold (65,000 cps)")
+    # plt.axhline(y=65000, color='gray', alpha=0.8,
+    #             label="SCS 107 Threshold (65,000 cps)")
+
+
+    # Fill in a gray bar for every radzone passage
+    # and mark the entries and exits with a separate color bar
+
+    # Yes, this is the dumb way you have to select ggplot colors:
+    entry_color = list(plt.rcParams['axes.prop_cycle'])[2]['color']
+    exit_color = list(plt.rcParams['axes.prop_cycle'])[4]['color']
+
+    for i, (entry, exit) in enumerate(zip(orbit["Radzone Entry"], orbit["Radzone Exit"])):
+        plt.axvline(entry, label="Radzone Entry" if i==0 else "", color=entry_color)
+        plt.axvline(exit, label="Radzone Exit" if i==0 else "", color=exit_color)
+        plt.axvspan(entry, exit, alpha=0.5, color='gray', label="Radzone Passage" if i==0 else "")
+    # the label= business is to ensure I don't write thousands of entries in the legend
+
+    # Also mark the entries and exits, to make it clear
+
 
     ax.plot_date(shieldrate["Time"], shieldrate["Rate"], markersize=0.8,
                  label='HRC Shield Rate (2SHEV1RT)')
@@ -120,15 +179,16 @@ def makeplot(shieldrate):
 def main():
 
     msid_directory = "msids/"
-    shieldrate_msid = "2SHEV1RT"
+    shieldrate_msid_filename = "2SHEV1RT.csv"
 
     spacecraft_event_directory = "spacecraft_events/"
-    spacecraft_event = "radzone_intervals"
+    spacecraft_event_filename = "orbit_table.csv"
 
     # This is a dictionary:
-    shieldrate = parse_shieldrate(msid_directory, shieldrate_msid)
+    shieldrate = parse_shieldrate(msid_directory, shieldrate_msid_filename)
+    orbit = parse_orbits(spacecraft_event_directory, spacecraft_event_filename)
 
-    makeplot(shieldrate)
+    makeplot(shieldrate, orbit)
 
 if __name__ == '__main__':
     start_time = time.time()
